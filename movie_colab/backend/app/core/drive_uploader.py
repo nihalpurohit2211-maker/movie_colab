@@ -15,6 +15,7 @@ import asyncio
 import gc
 import logging
 import os
+import time
 from typing import AsyncGenerator, Optional
 
 import httpx
@@ -204,9 +205,9 @@ async def stream_to_drive(
             resp.raise_for_status()
             return None  # unreachable
 
-    # ------------------------------------------------------------------
-    # Main streaming loop with ChunkAccumulator
-    # ------------------------------------------------------------------
+    start_time = time.monotonic()
+
+    # Stream chunks through the ChunkAccumulator
     async for raw_chunk in source_gen:
         if cancel_event.is_set():
             raise asyncio.CancelledError("Transfer cancelled by user")
@@ -214,7 +215,7 @@ async def stream_to_drive(
         bytes_dl += len(raw_chunk)
         buffer.extend(raw_chunk)
 
-        # Flush every full block immediately (default 8 MB, exact multiple of 256 KiB)
+        # Flush every full block immediately
         chunk_size = settings.CHUNK_SIZE_BYTES
         while len(buffer) >= chunk_size:
             chunk_data = bytes(buffer[:chunk_size])
@@ -228,6 +229,14 @@ async def stream_to_drive(
             gc.collect()
 
             pct = round(offset / total_size * 100, 1) if total_size else 0.0
+            elapsed = time.monotonic() - start_time
+            speed = (offset / elapsed) if elapsed > 0.5 else None
+            eta = (
+                int((total_size - offset) / speed)
+                if (total_size and speed and speed > 1024)
+                else None
+            )
+
             await telemetry.emit(task_id, ProgressEvent(
                 task_id=task_id,
                 status=TransferStatus.uploading_to_drive,
@@ -235,6 +244,8 @@ async def stream_to_drive(
                 bytes_uploaded=offset,
                 total_bytes=total_size or 0,
                 percent=pct,
+                speed_bytes_per_sec=speed,
+                eta_seconds=eta,
                 message=f"Uploaded {offset / (1024 * 1024):.1f} MB",
             ))
 

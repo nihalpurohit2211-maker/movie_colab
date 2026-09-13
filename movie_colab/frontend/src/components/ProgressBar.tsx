@@ -36,16 +36,42 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+function formatSpeed(bytesPerSec?: number): string {
+  if (!bytesPerSec || bytesPerSec <= 0) return "";
+  return `⚡ ${formatBytes(bytesPerSec)}/s`;
+}
+
+function formatEta(seconds?: number): string {
+  if (seconds === undefined || seconds === null || seconds < 0) return "";
+  if (seconds < 60) return `⏳ ETA: ${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) return `⏳ ETA: ${mins}m ${secs}s`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `⏳ ETA: ${hours}h ${remMins}m`;
+}
+
 interface ProgressBarProps {
   progress: ProgressEvent;
 }
 
 export default function ProgressBar({ progress }: ProgressBarProps) {
-  const { status, percent, bytes_uploaded, bytes_downloaded, total_bytes, message } =
-    progress;
+  const {
+    status,
+    percent,
+    bytes_uploaded,
+    bytes_downloaded,
+    total_bytes,
+    message,
+    speed_bytes_per_sec,
+    eta_seconds,
+  } = progress;
   const pct = Math.min(100, Math.max(0, percent));
   const isError = status === "failed";
   const isSuccess = status === "completed";
+  const speedStr = formatSpeed(speed_bytes_per_sec);
+  const etaStr = formatEta(eta_seconds);
 
   return (
     <div className="bg-slate-800/60 backdrop-blur border border-slate-700 rounded-2xl p-6 space-y-4">
@@ -91,6 +117,14 @@ export default function ProgressBar({ progress }: ProgressBarProps) {
           </div>
         )}
       </div>
+
+      {/* Speed & ETA metrics banner (visible during active transfer) */}
+      {(speedStr || etaStr) && !isSuccess && !isError && (
+        <div className="flex items-center justify-between text-xs font-medium text-cyan-300 bg-cyan-950/30 border border-cyan-800/40 rounded-lg px-3 py-1.5">
+          <span>{speedStr || "Calculating speed…"}</span>
+          <span>{etaStr || "Estimating ETA…"}</span>
+        </div>
+      )}
 
       {/* Byte stats */}
       <div className="flex items-center justify-between text-xs text-slate-400">

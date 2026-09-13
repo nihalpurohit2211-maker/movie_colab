@@ -213,6 +213,21 @@ async def get_progress(task_id: str) -> StreamingResponse:
     )
 
 
+@router.get("/transfer/{task_id}/status", response_model=ProgressEvent)
+async def get_transfer_status(task_id: str) -> ProgressEvent:
+    """
+    Retrieve the current/cached status snapshot of a transfer task.
+    Essential for mobile/Android clients reconnecting when returning from background.
+    """
+    status = telemetry.get_task_status(task_id)
+    if status is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Task {task_id!r} not found",
+        )
+    return status
+
+
 @router.post("/transfer/{task_id}/cancel", status_code=200)
 async def cancel_transfer(task_id: str) -> dict:
     """Signal cancellation for a running transfer task."""

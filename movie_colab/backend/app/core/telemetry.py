@@ -25,11 +25,14 @@ _registry: dict[str, list[asyncio.Queue[ProgressEvent | None]]] = {}
 # task_id -> cancellation event
 _cancel_flags: dict[str, asyncio.Event] = {}
 
+# task_id -> latest ProgressEvent (cached for reconnecting mobile/desktop clients)
+_latest_events: dict[str, ProgressEvent] = {}
+
 _TERMINAL = {TransferStatus.completed, TransferStatus.failed}
 
 
 def create_task(task_id: str) -> None:
-    """Register a new task.  Must be called before emit() or subscribe()."""
+    """Register a new task. Must be called before emit() or subscribe()."""
     _registry[task_id] = []
     _cancel_flags[task_id] = asyncio.Event()
     logger.debug("Task %s registered in telemetry", task_id)
@@ -40,12 +43,19 @@ def get_cancel_event(task_id: str) -> asyncio.Event | None:
     return _cancel_flags.get(task_id)
 
 
+def get_task_status(task_id: str) -> ProgressEvent | None:
+    """Return the latest cached status snapshot of task_id, or None if not found."""
+    return _latest_events.get(task_id)
+
+
 async def emit(task_id: str, event: ProgressEvent) -> None:
     """
-    Broadcast *event* to all SSE subscribers of *task_id*.
+    Broadcast *event* to all SSE subscribers of *task_id* and cache latest state.
     On terminal events (completed / failed) a None sentinel is appended to
     signal the end of the stream to every subscriber.
     """
+    _latest_events[task_id] = event
+
     queues = _registry.get(task_id, [])
     for q in queues:
         try:
@@ -59,7 +69,6 @@ async def emit(task_id: str, event: ProgressEvent) -> None:
                 q.put_nowait(None)  # sentinel - closes the generator
             except asyncio.QueueFull:
                 pass
-        # Clean up cancel flag; queues cleaned inside subscribe()
         _cancel_flags.pop(task_id, None)
         logger.debug("Task %s reached terminal state: %s", task_id, event.status)
 
@@ -67,22 +76,24 @@ async def emit(task_id: str, event: ProgressEvent) -> None:
 async def subscribe(task_id: str) -> AsyncGenerator[str, None]:
     """
     Async generator that yields SSE-formatted strings for *task_id*.
-    Registers a private queue, drains it until the None sentinel arrives,
-    then cleans up.
-
-    Usage inside a StreamingResponse::
-
-        async def event_stream():
-            async for frame in telemetry.subscribe(task_id):
-                yield frame
+    Immediately yields the latest cached ProgressEvent on connect so
+    reconnecting mobile/desktop clients never experience a blank progress state.
     """
+    # 1. Yield latest cached state immediately if present
+    cached = _latest_events.get(task_id)
+    if cached is not None:
+        yield f"data: {cached.model_dump_json()}\n\n"
+        if cached.status in _TERMINAL:
+            return  # Task already concluded
+
+    # 2. Subscribe to subsequent real-time events
     q: asyncio.Queue[ProgressEvent | None] = asyncio.Queue(maxsize=256)
     bucket = _registry.setdefault(task_id, [])
     bucket.append(q)
     try:
         while True:
             try:
-                event = await asyncio.wait_for(q.get(), timeout=30.0)
+                event = await asyncio.wait_for(q.get(), timeout=20.0)
             except asyncio.TimeoutError:
                 # Send a heartbeat comment to keep the connection alive
                 yield ": heartbeat\n\n"

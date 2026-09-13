@@ -25,6 +25,8 @@ export interface ProgressEvent {
   total_bytes: number;
   percent: number;
   message: string;
+  speed_bytes_per_sec?: number;
+  eta_seconds?: number;
   drive_file_id?: string;
   drive_file_link?: string;
   error?: string;
@@ -60,6 +62,17 @@ export async function startTransfer(
   }
 
   return resp.json() as Promise<{ task_id: string }>;
+}
+
+/**
+ * Fetch snapshot of a task status. Used for mobile background recovery and reconnection polling.
+ */
+export async function getTransferStatus(taskId: string): Promise<ProgressEvent> {
+  const resp = await fetch(`${API_BASE}/api/v1/transfer/${taskId}/status`);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch status: HTTP ${resp.status}`);
+  }
+  return resp.json() as Promise<ProgressEvent>;
 }
 
 /**

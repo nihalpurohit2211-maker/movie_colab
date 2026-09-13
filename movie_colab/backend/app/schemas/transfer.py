@@ -51,6 +51,8 @@ class ProgressEvent(BaseModel):
     total_bytes: int = 0
     percent: float = 0.0
     message: str = ""
+    speed_bytes_per_sec: Optional[float] = None
+    eta_seconds: Optional[int] = None
     drive_file_id: Optional[str] = None
     drive_file_link: Optional[str] = None
     error: Optional[str] = None

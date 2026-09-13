@@ -24,17 +24,13 @@ logger = logging.getLogger(__name__)
 # Read size per aiter_bytes / process.stdout.read call.
 _READ_CHUNK = 2 * 1024 * 1024  # 2 MB
 
-MEDIA_PLATFORMS: frozenset[str] = frozenset({
-    "youtube.com", "www.youtube.com", "youtu.be",
-    "vimeo.com", "www.vimeo.com",
-    "dailymotion.com", "www.dailymotion.com",
-    "twitch.tv", "www.twitch.tv",
-    "instagram.com", "www.instagram.com",
-    "twitter.com", "www.twitter.com", "x.com",
-    "tiktok.com", "www.tiktok.com",
-    "facebook.com", "www.facebook.com",
-    "bilibili.com", "www.bilibili.com",
-})
+MEDIA_DOMAINS: tuple[str, ...] = (
+    "youtube.com", "youtu.be", "vimeo.com", "dailymotion.com",
+    "twitch.tv", "instagram.com", "twitter.com", "x.com",
+    "tiktok.com", "facebook.com", "fb.watch", "bilibili.com",
+    "reddit.com", "pin.it", "pinterest.com", "streamable.com",
+    "soundcloud.com", "vk.com",
+)
 
 
 @dataclass
@@ -79,7 +75,8 @@ def _extract_meta(meta: StreamMeta, headers: httpx.Headers) -> None:
 
 def _is_media_platform(url: str) -> bool:
     try:
-        return (urlparse(url).hostname or "").lower() in MEDIA_PLATFORMS
+        host = (urlparse(url).hostname or "").lower()
+        return any(host == d or host.endswith("." + d) for d in MEDIA_DOMAINS)
     except Exception:
         return False
 
@@ -99,13 +96,25 @@ async def _open_httpx_stream(
     meta = StreamMeta()
     ready: asyncio.Event = asyncio.Event()
     error: list[BaseException] = []
+    # Strict backpressure: queue holds at most 1 chunk (2 MB)
     q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=1)
+
+    browser_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/128.0.0.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+        "Accept-Encoding": "identity",
+    }
 
     async def _produce() -> None:
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=30.0),
                 follow_redirects=True,
+                headers=browser_headers,
                 limits=httpx.Limits(max_connections=1, max_keepalive_connections=1),
             ) as client:
                 async with client.stream("GET", url) as resp:
