@@ -18,12 +18,11 @@ from typing import AsyncGenerator, Optional
 
 import httpx
 
+from app.config import settings
 from app.core import telemetry
 from app.schemas.transfer import ProgressEvent, TransferStatus
 
 logger = logging.getLogger(__name__)
-
-CHUNK_SIZE: int = 16 * 1024 * 1024  # 16 MB = 64 x 256 KiB (Drive alignment)
 
 _DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
 _DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
@@ -214,10 +213,11 @@ async def stream_to_drive(
         bytes_dl += len(raw_chunk)
         buffer.extend(raw_chunk)
 
-        # Flush every full 16 MB block immediately
-        while len(buffer) >= CHUNK_SIZE:
-            chunk_data = bytes(buffer[:CHUNK_SIZE])
-            del buffer[:CHUNK_SIZE]
+        # Flush every full block immediately (default 64 MB, exact multiple of 256 KiB)
+        chunk_size = settings.CHUNK_SIZE_BYTES
+        while len(buffer) >= chunk_size:
+            chunk_data = bytes(buffer[:chunk_size])
+            del buffer[:chunk_size]
 
             fid = await _put_chunk(chunk_data, is_final=False)
             if fid:
@@ -235,7 +235,7 @@ async def stream_to_drive(
             ))
 
     # Flush the final remainder (may be any size, including 0 if total was
-    # an exact multiple of CHUNK_SIZE and Drive already returned 200/201)
+    # an exact multiple of chunk_size and Drive already returned 200/201)
     if buffer and drive_file_id is None:
         fid = await _put_chunk(bytes(buffer), is_final=True)
         if fid:
