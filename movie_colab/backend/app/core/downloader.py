@@ -22,8 +22,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Read size per aiter_bytes / process.stdout.read call.
-# Capped at 1 MB to guarantee strict memory bounds (<50 MB total).
-_READ_CHUNK = 1024 * 1024  # 1 MB
+_READ_CHUNK = 2 * 1024 * 1024  # 2 MB
 
 MEDIA_PLATFORMS: frozenset[str] = frozenset({
     "youtube.com", "www.youtube.com", "youtu.be",

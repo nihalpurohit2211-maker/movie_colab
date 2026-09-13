@@ -45,7 +45,7 @@ Add these under **Environment Variables** in Render:
 
 | Key | Value | Notes |
 |---|---|---|
-| `CHUNK_SIZE_BYTES` | `8388608` | 8 MB (32 x 256 KiB) capped to prevent OOM on 512 MB containers |
+| `CHUNK_SIZE_BYTES` | `16777216` | 16 MB (64 x 256 KiB) optimized transfer speed under 85 MB RAM ceiling |
 | `ALLOWED_ORIGINS` | `*` | Temporary wildcard during initial deployment |
 | `APP_ENV` | `production` | Production mode |
 
