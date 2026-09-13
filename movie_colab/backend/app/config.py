@@ -28,8 +28,8 @@ class Settings(BaseSettings):
 
     # Drive v3 resumable upload requires all intermediate chunks to be an exact
     # multiple of 256 KiB (262,144 bytes).
-    # Default is 64 MB (67,108,864 bytes = 256 * 256 KiB) for cloud transfers.
-    CHUNK_SIZE_BYTES: int = 64 * 1024 * 1024
+    # Default is 8 MB (8,388,608 bytes = 32 * 256 KiB) to stay strictly under 50 MB RAM on Render 512MB tier.
+    CHUNK_SIZE_BYTES: int = 8 * 1024 * 1024
 
     MAX_CONCURRENT_TASKS: int = 10
 

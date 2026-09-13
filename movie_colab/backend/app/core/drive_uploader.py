@@ -12,6 +12,7 @@ Key guarantees:
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import os
 from typing import AsyncGenerator, Optional
@@ -213,7 +214,7 @@ async def stream_to_drive(
         bytes_dl += len(raw_chunk)
         buffer.extend(raw_chunk)
 
-        # Flush every full block immediately (default 64 MB, exact multiple of 256 KiB)
+        # Flush every full block immediately (default 8 MB, exact multiple of 256 KiB)
         chunk_size = settings.CHUNK_SIZE_BYTES
         while len(buffer) >= chunk_size:
             chunk_data = bytes(buffer[:chunk_size])
@@ -223,6 +224,9 @@ async def stream_to_drive(
             if fid:
                 drive_file_id = fid
 
+            del chunk_data
+            gc.collect()
+
             pct = round(offset / total_size * 100, 1) if total_size else 0.0
             await telemetry.emit(task_id, ProgressEvent(
                 task_id=task_id,
@@ -231,18 +235,21 @@ async def stream_to_drive(
                 bytes_uploaded=offset,
                 total_bytes=total_size or 0,
                 percent=pct,
-                message=f"Uploaded {offset >> 20} MB",
+                message=f"Uploaded {offset / (1024 * 1024):.1f} MB",
             ))
 
     # Flush the final remainder (may be any size, including 0 if total was
     # an exact multiple of chunk_size and Drive already returned 200/201)
     if buffer and drive_file_id is None:
-        fid = await _put_chunk(bytes(buffer), is_final=True)
+        final_data = bytes(buffer)
+        buffer.clear()
+        fid = await _put_chunk(final_data, is_final=True)
         if fid:
             drive_file_id = fid
+        del final_data
+        gc.collect()
     elif buffer:
-        # Drive already closed the session via a previous 200/201;
-        # this branch should not occur in practice.
-        logger.warning("Leftover %d bytes after Drive returned file ID", len(buffer))
+        buffer.clear()
+        gc.collect()
 
     return drive_file_id

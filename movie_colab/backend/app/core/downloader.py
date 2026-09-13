@@ -22,9 +22,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Read size per aiter_bytes / process.stdout.read call.
-# Smaller than the 16 MB Drive chunk so the queue never holds >1 "Drive chunk"
-# worth of data at once.
-_READ_CHUNK = 8 * 1024 * 1024  # 8 MB
+# Capped at 1 MB to guarantee strict memory bounds (<50 MB total).
+_READ_CHUNK = 1024 * 1024  # 1 MB
 
 MEDIA_PLATFORMS: frozenset[str] = frozenset({
     "youtube.com", "www.youtube.com", "youtu.be",
@@ -101,7 +100,7 @@ async def _open_httpx_stream(
     meta = StreamMeta()
     ready: asyncio.Event = asyncio.Event()
     error: list[BaseException] = []
-    q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=4)
+    q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=1)
 
     async def _produce() -> None:
         try:
@@ -165,7 +164,7 @@ async def _open_ytdlp_stream(
     """
     meta = StreamMeta(content_type="video/mp4")
     error: list[BaseException] = []
-    q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=4)
+    q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=1)
 
     process = await asyncio.create_subprocess_exec(
         "yt-dlp",
